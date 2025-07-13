@@ -20,39 +20,34 @@ from GrapTransformations.pad_node_attr import PadNodeAttr
 
 from Models.gnn import GNN
 # from Models.model import GNN
-from Models.encoder import NodeEncoder, EdgeEncoder, ZincAtomEncoder, EgoEncoder
-from Models.ESAN.conv import GINConv, OriginalGINConv, GCNConv, ZINCGINConv 
+from Models.encoder import NodeEncoder, EdgeEncoder, ZincAtomEncoder, EgoEncoder, RxnAtomEncoder
+from Models.ESAN.conv import GINConv, OriginalGINConv, GCNConv, ZINCGINConv, RxnGINConv 
 from Models.ESAN.models import DSnetwork, DSSnetwork
 from Models.ESAN.models import GNN as ESAN_GNN
-from Models.mlp import MLP
+from Models.mlp import MLP, MLPX
 
 import Misc.config as config 
 
-implemented_TU_datasets = ["MUTAG", "PROTEINS", "PTC", "NCI1", "NCI109"]
 
-def load_tvt_indices(dataset_name, fold, folds = 10):
-    train_path = os.path.join(config.SPLITS_PATH, "Train_Val_Test_Splits", f"{dataset_name}_fold_{fold}_of_{folds}_train.json")
-    valid_path = os.path.join(config.SPLITS_PATH, "Train_Val_Test_Splits", f"{dataset_name}_fold_{fold}_of_{folds}_valid.json")
-    test_path = os.path.join(config.SPLITS_PATH, "Train_Val_Test_Splits", f"{dataset_name}_fold_{fold}_of_{folds}_test.json")
+#Abdulfatai
 
-    with open(train_path) as file:
-        train_idx = json.load(file)
-    with open(valid_path) as file:
-        valid_idx = json.load(file)
-    with open(test_path) as file:
-        test_idx = json.load(file)
+from Rxncgr.rxn_cgr1 import ChemDataset
+import numpy as np
+import pandas as pd
 
-    return train_idx, valid_idx, test_idx
+
+data_path_base = "/home/abdulfatai/Downloads/Internship/GNN-Simulation/Rxncgr/dataset/full_rdb7/"
+file_names = ['train.csv', 'val.csv', 'test.csv']
 
 def get_transform(args):
     transforms = []
-    if args.dataset.lower() == "csl":
-        transforms.append(OneHotDegree(5))
-    
+
     if args.use_cliques:
+        print("Using Cliques")
         transforms.append(CellularCliqueEncoding(args.max_struct_size, aggr_edge_atr=args.use_aggr_edge_atr, aggr_vertex_feat=args.use_aggr_vertex_feat,
             explicit_pattern_enc=args.use_expl_type_enc, edge_attr_in_vertices=args.use_edge_attr_in_vertices))
     elif args.use_rings:
+        print("Using RIngs")
         transforms.append(CellularRingEncoding(args.max_struct_size, aggr_edge_atr=args.use_aggr_edge_atr, aggr_vertex_feat=args.use_aggr_vertex_feat,
             explicit_pattern_enc=args.use_expl_type_enc, edge_attr_in_vertices=args.use_edge_attr_in_vertices))
     elif not args.use_esan and args.policy != "":
@@ -65,12 +60,9 @@ def get_transform(args):
         
     elif args.use_esan and args.policy != "":
         transforms.append(policy2transform(args.policy, args.num_hops))
-        
-    # Pad features if necessary (needs to be done after adding additional features from other transformation)
-    if args.dataset.lower() == "csl":
-        transforms.append(AddZeroEdgeAttr(args.emb_dim))
-        transforms.append(PadNodeAttr(args.emb_dim))
-    
+
+    else:
+        print("No Transformation")    
     return Compose(transforms)
 
 def load_dataset(args, config):
@@ -85,36 +77,23 @@ def load_dataset(args, config):
 
     if args.dataset.lower() == "zinc":
         datasets = [ZINC(root=dir, subset=True, split=split, pre_transform=transform) for split in ["train", "val", "test"]]
-    elif args.dataset.lower() == "cifar10":
-        datasets = [GNNBenchmarkDataset(name ="CIFAR10", root=dir, split=split, pre_transform=Compose([ToUndirected(), transform])) for split in ["train", "val", "test"]]
-    elif args.dataset.lower() == "cluster":
-        dataset = [GNNBenchmarkDataset(name ="CLUSTER", root=dir, split=split, pre_transform=transform) for split in ["train", "val", "test"]]
-    elif args.dataset.lower() in ["ogbg-molhiv", "ogbg-ppa", "ogbg-code2", "ogbg-molpcba", "ogbg-moltox21", "ogbg-molesol", "ogbg-molbace", "ogbg-molbbbp", "ogbg-molclintox", "ogbg-molmuv", "ogbg-molsider", "ogbg-moltoxcast", "ogbg-molfreesolv", "ogbg-mollipo"]:
-        dataset = PygGraphPropPredDataset(root=dir, name=args.dataset.lower(), pre_transform=transform)
-        split_idx = dataset.get_idx_split()
-        datasets = [dataset[split_idx["train"]], dataset[split_idx["valid"]], dataset[split_idx["test"]]]
-    elif args.dataset in implemented_TU_datasets:
-        dir = os.path.join(config.DATA_PATH, args.dataset)
-        
-        import shutil
-        if os.path.isdir(dir):
-            shutil.rmtree(dir)
-        
-        dataset = torch_geometric.datasets.TUDataset(root=dir, name=args.dataset, pre_transform=transform, use_node_attr=True, use_edge_attr=False)   
-        train_idx, val_idx, test_idx = load_tvt_indices(args.dataset, args.split)
-        datasets = [dataset[train_idx], dataset[val_idx], dataset[test_idx]]
-    elif args.dataset.lower() == "csl":
-        all_idx = {}
-        for section in ['train', 'val', 'test']:
-            with open(os.path.join(config.SPLITS_PATH, "CSL",  f"{section}.index"), 'r') as f:
-                reader = csv.reader(f)
-                all_idx[section] = [list(map(int, idx)) for idx in reader]
-        dataset = GNNBenchmarkDataset(name ="CSL", root=dir, pre_transform=transform)
-        datasets = [dataset[all_idx["train"][args.split]], dataset[all_idx["val"][args.split]], dataset[all_idx["test"][args.split]]]
-    elif args.dataset.lower() in ["exp", "cexp"]:
-        dataset = PlanarSATPairsDataset(name=args.dataset, root=dir, pre_transform=transform)
-        split_dict = dataset.separate_data(args.seed, args.split)
-        datasets = [split_dict["train"], split_dict["valid"], split_dict["test"]]
+
+    elif args.dataset.lower() == "rxn_cgr":
+
+        # data_path_base = "/home/abdulfatai/Internship/GNN-Simulation/Misc/BenchTransforms/rxn_test_data/e2sn2/"
+        # file_names = ['train.csv', 'val.csv', 'test.csv']  # List of CSV files to process
+
+        # List comprehension to process all datasets in a single line
+        datasets = [
+            ChemDataset(
+                smiles=pd.read_csv(data_path_base + file_name).iloc[:, 1].values, #Present in the 2nd column
+                labels=pd.read_csv(data_path_base + file_name).iloc[:, 2].values.astype(np.float32), #Present in the 3rd column
+                transform = transform,
+                extra = False
+            ) for file_name in file_names
+        ]
+
+
     else:
         raise NotImplementedError("Unknown dataset")
         
@@ -129,25 +108,57 @@ def load_dataset(args, config):
         test_loader = DataLoader(datasets[2], batch_size=args.batch_size, shuffle=False)
     return train_loader, val_loader, test_loader
 
-class lin_trafo(torch.nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(lin_trafo, self).__init__()
-        self.linear =  torch.nn.Linear(input_dim, output_dim)
-        
-    def forward(self, x):
-        return self.linear(x.float())
-
-class lin_trafo_emb_combination(torch.nn.Module):
-    def __init__(self, input_dim, output_dim, node_emb, len_emb_feat):
-        super(lin_trafo_emb_combination, self).__init__()
-        self.linear =  torch.nn.Linear(input_dim, output_dim)
-        self.node_emb = node_emb
-        self.len_emb_feat = len_emb_feat
-        
-    def forward(self, x):
-        return self.linear(x[:, self.len_emb_feat:].float()) + self.node_emb(x[:, :self.len_emb_feat])
 
 def get_model(args, num_classes, num_vertex_features, num_tasks):
+
+
+    transform = get_transform(args)
+
+    datasets = [
+        ChemDataset(
+            smiles=pd.read_csv(data_path_base + file_name).iloc[:, 1].values,
+            labels=pd.read_csv(data_path_base + file_name).iloc[:, 2].values.astype(np.float32),
+            transform = transform,
+            extra = False
+        ) for file_name in file_names
+    ]
+
+
+    # Placeholder for max ranges
+    node_feature_ranges = None
+    bond_feature_ranges = None
+
+    for dataset in datasets:
+        for data in dataset:
+            # Assuming `data.x` contains node features and `data.edge_attr` contains bond features
+            if node_feature_ranges is None:
+                node_feature_ranges = data.x.min(dim=0).values, data.x.max(dim=0).values
+            else:
+                node_feature_ranges = (
+                    torch.min(node_feature_ranges[0], data.x.min(dim=0).values),
+                    torch.max(node_feature_ranges[1], data.x.max(dim=0).values),
+                )
+            
+            if data.edge_attr is not None:  # Check if edge_attr exists
+                if bond_feature_ranges is None:
+                    bond_feature_ranges = data.edge_attr.min(dim=0).values, data.edge_attr.max(dim=0).values
+                else:
+                    bond_feature_ranges = (
+                        torch.min(bond_feature_ranges[0], data.edge_attr.min(dim=0).values),
+                        torch.max(bond_feature_ranges[1], data.edge_attr.max(dim=0).values),
+                    )
+
+    # Compute the feature dimensions
+    node_feature_dims = [
+        int(node_feature_ranges[1][i] - node_feature_ranges[0][i] + 1)
+        for i in range(len(node_feature_ranges[0]))
+    ]
+    bond_feature_dims = [
+        int(bond_feature_ranges[1][i] - bond_feature_ranges[0][i] + 1)
+        for i in range(len(bond_feature_ranges[0]))
+    ]
+
+
     if not args.use_esan:
         node_feature_dims = []
         bond_feature_dims = []
@@ -170,32 +181,69 @@ def get_model(args, num_classes, num_vertex_features, num_tasks):
             
             node_encoder = NodeEncoder(emb_dim=args.emb_dim, feature_dims=node_feature_dims)
             edge_encoder =  EdgeEncoder(emb_dim=args.emb_dim, feature_dims=[4])
-        elif args.dataset.lower() in ["ogbg-molhiv", "ogbg-molpcba", "ogbg-moltox21", "ogbg-molesol", "ogbg-molbace", "ogbg-molbbbp", "ogbg-molclintox", "ogbg-molmuv", "ogbg-molsider", "ogbg-moltoxcast", "ogbg-molfreesolv", "ogbg-mollipo"]:
-            node_feature_dims += get_atom_feature_dims()
-            bond_feature_dims =  get_bond_feature_dims()
+
+
+        elif args.dataset.lower() == "rxn_cgr": 
+
+
+            transform = get_transform(args)
+
+            # data_path_base = "/home/abdulfatai/Internship/GNN-Simulation/Misc/BenchTransforms/rxn_test_data/e2sn2/"
+            # file_names = ['train.csv', 'val.csv', 'test.csv']  # List of CSV files to process
+
+            # List comprehension to process all datasets in a single line
+            datasets = [
+                ChemDataset(
+                    smiles=pd.read_csv(data_path_base + file_name).iloc[:, 1].values,
+                    labels=pd.read_csv(data_path_base + file_name).iloc[:, 2].values.astype(np.float32),
+                    transform = transform,
+                    extra = False
+                ) for file_name in file_names
+            ]
+
+
+            # Placeholder for max ranges
+            node_feature_ranges = None
+            bond_feature_ranges = None
+
+            for dataset in datasets:
+                for data in dataset:
+                    # Assuming `data.x` contains node features and `data.edge_attr` contains bond features
+                    if node_feature_ranges is None:
+                        node_feature_ranges = data.x.min(dim=0).values, data.x.max(dim=0).values
+                    else:
+                        node_feature_ranges = (
+                            torch.min(node_feature_ranges[0], data.x.min(dim=0).values),
+                            torch.max(node_feature_ranges[1], data.x.max(dim=0).values),
+                        )
+                    
+                    if data.edge_attr is not None:  # Check if edge_attr exists
+                        if bond_feature_ranges is None:
+                            bond_feature_ranges = data.edge_attr.min(dim=0).values, data.edge_attr.max(dim=0).values
+                        else:
+                            bond_feature_ranges = (
+                                torch.min(bond_feature_ranges[0], data.edge_attr.min(dim=0).values),
+                                torch.max(bond_feature_ranges[1], data.edge_attr.max(dim=0).values),
+                            )
+
+            # Compute the feature dimensions
+            node_feature_dims = [
+                int(node_feature_ranges[1][i] - node_feature_ranges[0][i] + 1)
+                for i in range(len(node_feature_ranges[0]))
+            ]
+            bond_feature_dims = [
+                int(bond_feature_ranges[1][i] - bond_feature_ranges[0][i] + 1)
+                for i in range(len(bond_feature_ranges[0]))
+            ]
+            
             if args.edge_attr_in_vertices:
                 node_feature_dims += bond_feature_dims
-            node_encoder, edge_encoder = NodeEncoder(args.emb_dim, feature_dims=node_feature_dims), EdgeEncoder(args.emb_dim, feature_dims=bond_feature_dims)
-        elif args.dataset in implemented_TU_datasets:            
-            if args.dataset == "PROTEINS":
-                node_dim = 4
-            elif args.dataset == "MUTAG":
-                node_dim = 7
-            elif args.dataset == "NCI109":
-                node_dim = 38
-            elif args.dataset == "NCI1":
-                node_dim = 37
-            elif args.dataset == "PTC":
-                node_dim = 64
-            else:
-                node_dim = 1
                 
-            if node_feature_dims == []:
-                node_encoder = lin_trafo(node_dim, args.emb_dim)
-            else:
-                node_encoder = lin_trafo_emb_combination(node_dim, args.emb_dim, NodeEncoder(emb_dim=args.emb_dim, feature_dims=node_feature_dims), len(node_feature_dims))
-                
-            edge_encoder = lambda x: torch.zeros([1, args.emb_dim], device = args.device)
+
+            node_encoder = NodeEncoder(emb_dim=args.emb_dim, feature_dims=node_feature_dims)
+            edge_encoder =  EdgeEncoder(emb_dim=args.emb_dim, feature_dims=bond_feature_dims)
+
+
         else:
             node_encoder, edge_encoder = lambda x: x, lambda x: x
                 
@@ -215,27 +263,36 @@ def get_model(args, num_classes, num_vertex_features, num_tasks):
                         max_type = 2 if args.policy != "" else 0, edge_encoder=edge_encoder, node_encoder=node_encoder, 
                         use_node_encoder = args.use_node_encoder, num_mlp_layers = args.num_mlp_layers)
         elif args.model.lower() == "mlp":
-                return MLP(num_features=num_vertex_features, num_layers=args.num_layers, hidden=args.emb_dim, 
+                if args.dataset.lower() == "rxn_cgr":
+                    return MLPX(num_features=num_vertex_features, num_layers=args.num_layers, hidden=args.emb_dim, 
+                        num_classes=num_classes, num_tasks=num_tasks, dropout_rate=args.drop_out, graph_pooling=args.pooling, bond_feature_dims = bond_feature_dims, use_edge_features = True)
+                else:
+                    return MLP(num_features=num_vertex_features, num_layers=args.num_layers, hidden=args.emb_dim, 
                         num_classes=num_classes, num_tasks=num_tasks, dropout_rate=args.drop_out, graph_pooling=args.pooling)
-        else: # Probably don't need other models
-            pass
+        else:
+            print("Invalid model given.")
 
     # ESAN
     else:
         encoder = lambda x: x
-        if 'ogb' in args.dataset:
-            encoder = AtomEncoder(args.emb_dim) if args.policy != "ego_nets_plus" else EgoEncoder(AtomEncoder(args.emb_dim))
-        elif 'ZINC' in args.dataset:
+        if 'ZINC' in args.dataset:
             encoder = ZincAtomEncoder(policy=args.policy, emb_dim=args.emb_dim)
-        if 'ogb' in args.dataset or 'ZINC' in args.dataset:
+        
+        elif 'rxn_cgr' in args.dataset:
+            encoder = RxnAtomEncoder(policy=args.policy, emb_dim=args.emb_dim)
+        
+        if 'ZINC' or 'rxn_cgr' in args.dataset:
             in_dim = args.emb_dim if args.policy != "ego_nets_plus" else args.emb_dim + 2
-        elif args.dataset in ['CSL', 'EXP', 'CEXP']:
-            in_dim = 6 if args.policy != "ego_nets_plus" else 6 + 2  # used deg as node feature
+        
+        
         else:
             in_dim = dataset.num_features
 
         # DSS
-        if args.use_dss_message_passing: 
+        if args.use_dss_message_passing:
+
+            if args.model != 'rxngin':
+                bond_feature_dims = None 
             if args.model == 'GIN':
                 GNNConv = GINConv
             elif args.model == 'originalgin':
@@ -246,18 +303,30 @@ def get_model(args, num_classes, num_vertex_features, num_tasks):
                 GNNConv = GCNConv
             elif args.model == 'ZINCGIN':
                 GNNConv = ZINCGINConv
+            elif args.model == 'rxngin':
+                GNNConv = RxnGINConv
+                bond_feature_dims = bond_feature_dims
             else:
                 raise ValueError('Undefined GNN type called {}'.format(args.model))
+
         
             model = DSSnetwork(num_layers=args.num_layers, in_dim=in_dim, emb_dim=args.emb_dim, num_tasks=num_tasks*num_classes,
-                            feature_encoder=encoder, GNNConv=GNNConv)
+                            feature_encoder=encoder, GNNConv=GNNConv, bond_feature_dims=bond_feature_dims)
         # DS
         else:
+
+            if args.model == 'rxngin':
+                GNNConv = RxnGINConv
+                bond_feature_dims = bond_feature_dims
+
+            else:
+                bond_feature_dims = None
             subgraph_gnn = ESAN_GNN(gnn_type=args.model.lower(), num_tasks=num_tasks*num_classes, num_layer=args.num_layers, in_dim=in_dim,
                            emb_dim=args.emb_dim, drop_ratio=args.drop_out, graph_pooling='sum' if args.model != 'gin' else 'mean', 
-                           feature_encoder=encoder)
+                           feature_encoder=encoder, bond_feature_dims=bond_feature_dims)
+                           
             model = DSnetwork(subgraph_gnn=subgraph_gnn, channels=[64, 64], num_tasks=num_tasks*num_classes,
-                            invariant=args.dataset == 'ZINC')
+                            invariant=args.dataset == 'ZINC' or args.dataset == 'rxn_cgr', bond_feature_dims=bond_feature_dims)
         return model
 
 
@@ -286,28 +355,12 @@ def get_loss(args):
     if args.dataset.lower() == "zinc":
         loss = torch.nn.L1Loss()
         metric = "mae"
-    elif args.dataset.lower() in ["ogbg-molesol", "ogbg-molfreesolv", "ogbg-mollipo"]:
+
+
+    elif args.dataset.lower() == "rxn_cgr":
         loss = torch.nn.L1Loss()
-        metric = "rmse (ogb)"
-        metric_method = get_evaluator(args.dataset)
-    elif args.dataset.lower() in ["cifar10", "csl", "exp", "cexp"]:
-        loss = torch.nn.CrossEntropyLoss()
-        metric = "accuracy"
-    elif args.dataset in ["ogbg-molhiv", "ogbg-moltox21", "ogbg-molbace", "ogbg-molbbbp", "ogbg-molclintox", "ogbg-molsider", "ogbg-moltoxcast"]:
-        loss = torch.nn.BCEWithLogitsLoss()
-        metric = "rocauc (ogb)" 
-        metric_method = get_evaluator(args.dataset)
-    elif args.dataset == "ogbg-ppa":
-        loss = torch.nn.BCEWithLogitsLoss()
-        metric = "accuracy (ogb)" 
-        metric_method = get_evaluator(args.dataset)
-    elif args.dataset in ["ogbg-molpcba", "ogbg-molmuv"]:
-        loss = torch.nn.BCEWithLogitsLoss()
-        metric = "ap (ogb)" 
-        metric_method = get_evaluator(args.dataset)
-    elif args.dataset in implemented_TU_datasets:
-        loss = torch.nn.CrossEntropyLoss()
-        metric = "accuracy"
+        metric = "mae"
+
     else:
         raise NotImplementedError("No loss for this dataset")
     

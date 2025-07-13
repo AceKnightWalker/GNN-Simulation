@@ -130,7 +130,7 @@ class GNN_node(torch.nn.Module):
             elif gnn_type == 'gcn':
                 self.convs.append(GCNConv(emb_dim, edge_encoder))
             elif gnn_type == 'gat': 
-                self.convs.append(GATv2Conv(in_channels = emb_dim, out_channels = emb_dime, edge_dim  = 1))
+                self.convs.append(GATv2Conv(in_channels = emb_dim, out_channels = emb_dim, edge_dim  = 1))
             else:
                 raise ValueError('Undefined GNN type called {}'.format(gnn_type))
 

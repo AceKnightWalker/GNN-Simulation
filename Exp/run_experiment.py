@@ -46,33 +46,9 @@ def dict_to_args(args_dict):
     print(list_args)
     return list_args
 
-binary_class_ogb_datasets = ["molbace", "molbbbp", "molclintox", "molmuv", "molpcba", "molsider", "moltox21", "moltoxcast", "molhiv", "molchembl"]
-binary_class_datsets = binary_class_ogb_datasets
-regression_ogb_datasets = ["molesol", "molfreesolv", "mollipo"]
-regression_datsets = regression_ogb_datasets + ["zinc"]
-ogb_datasets = binary_class_ogb_datasets + regression_ogb_datasets
 
-def extra_info_for_cwn(dataset, args_dict):
-    # Set evalulation metric, for example this would correspond to
-    # eval_metric: ["ogbg-molhiv"] in the yaml file
-    if dataset.lower() in ogb_datasets:
-        args_dict["--eval_metric"] = f"ogbg-{dataset.lower()}"
-    elif dataset.lower() == "zinc":
-        args_dict["--eval_metric"] = "mae"
-    else:
-        raise ValueError("Unknown eval metric for this dataset")
-    
-    # Set task type metric, for example this would correspond to
-    # eval_metric: ["ogbg-molhiv"] in the yaml file
-    if dataset.lower() in binary_class_datsets:
-        args_dict["--task_type"] = "bin_classification"
-    elif dataset.lower() in regression_datsets:
-        args_dict["--task_type"] = "regression"
-        args_dict["--minimize"] = ""
-    else:
-        raise ValueError("Unknown task type for this dataset")
-    return args_dict
-    
+regression_datsets = ["zinc", "rxn_cgr"] 
+
 
 def main():
     parser = argparse.ArgumentParser(description='An experiment.')
@@ -91,11 +67,8 @@ def main():
 
     args = parser.parse_args()
     
-    if args.use_cwn:
-        from cwn.exp.run_exp import run as run_with_args
-        run = lambda args_dict: run_with_args(dict_to_args(extra_info_for_cwn(args.dataset, args_dict)))
-    else:
-        from Exp.run_model import run 
+
+    from Exp.run_model import run 
 
     with open(args.grid_file, 'r') as file:
         grid_raw = yaml.safe_load(file)

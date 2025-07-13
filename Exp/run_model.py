@@ -20,11 +20,15 @@ def main(args):
 
     print(args)
     train_loader, val_loader, test_loader = load_dataset(args, config)
+
+    #Abdulfatai
+    assert len(train_loader.dataset) > 0, "Train dataset is empty."
+    assert len(val_loader.dataset) > 0, "Validation dataset is empty."
+    assert len(test_loader.dataset) > 0, "Test dataset is empty."
     num_classes, num_vertex_features = train_loader.dataset.num_classes, train_loader.dataset.num_node_features
-    print(f"Number of features: {num_vertex_features}")
     
 
-    if args.dataset.lower() == "zinc" or "ogb" in args.dataset.lower():
+    if args.dataset.lower() == "zinc" or "ogb" or "rxn_cgr" in args.dataset.lower():
         num_classes = 1
     else:
         print(f"Classes: {train_loader.dataset.num_classes}")
@@ -35,7 +39,6 @@ def main(args):
     except:
         num_tasks = 1
         
-    print(f"Tasks: {num_tasks}")
 
     model = get_model(args, num_classes, num_vertex_features, num_tasks)
     device = args.device
@@ -92,6 +95,8 @@ def main(args):
 
         # Exit conditions
         if optimizer.param_groups[0]['lr'] < args.min_lr:
+                #Abdulfatai
+                assert len(optimizer.param_groups) > 0, "Optimizer param_groups is empty."
                 print("\nLR REACHED MINIMUM: Stopping")
                 break
 
@@ -102,13 +107,21 @@ def main(args):
 
     
     if eval_name in ["mae", "rmse (ogb)"]:
+        #Abdulfatai
+        assert len(val_results[eval_name]) > 0, f"val_results[{eval_name}] is empty."
         best_val_epoch = np.argmin(val_results[eval_name])
         mode = "min"
     else:
+        #Abdulfatai
+        assert len(val_results[eval_name]) > 0, f"val_results[{eval_name}] is empty."
         best_val_epoch = np.argmax(val_results[eval_name])
         mode = "max"
 
     val_results["best_epoch"] = best_val_epoch
+
+    assert len(train_results['total_loss']) > best_val_epoch, "train_results['total_loss'] is too short."
+    assert len(val_results['total_loss']) > best_val_epoch, "val_results['total_loss'] is too short."
+    assert len(test_result['total_loss']) > best_val_epoch, "test_result['total_loss'] is too short."
 
 
     loss_train, loss_val, loss_test = train_results['total_loss'][best_val_epoch], val_results['total_loss'][best_val_epoch], test_result['total_loss'][best_val_epoch]
@@ -135,6 +148,10 @@ def main(args):
         wandb.finish()
         print("end logging")
 
+    # Abdulfatai
+    assert eval_name in val_results, f"{eval_name} not found in val_results."
+    assert len(val_results[eval_name]) > 0, f"val_results[{eval_name}] is empty or not properly populated."
+
     return {
         "best_epoch": int(best_val_epoch + 1),
         "epochs": int(epoch),
@@ -158,5 +175,8 @@ def run(passed_args = None):
     args = parse_args(passed_args)
     return main(args)
 
+
 if __name__ == "__main__":
     run()
+
+

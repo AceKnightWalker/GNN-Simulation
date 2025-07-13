@@ -11,16 +11,13 @@ parser.add_argument('-path', type=str)
 path = parser.parse_args().path
 
 models = ["gin", "gcn",  "mlp", "ds", "sbe_ds", "dss", "sbe_dss", "CIN", "cre", "gcn_sbe_ds", "gcn_sbe_dss", "gcn_cre",  "mlp_sbe_ds", "mlp_sbe_dss", "mlp_cre"]
-datasets1 = ["ogbg-molbace", "ogbg-molclintox", "ogbg-molbbbp", "ogbg-molsider", "ogbg-moltoxcast", "ogbg-mollipo"]
-datasets2 = ["ogbg-molhiv", "ogbg-moltox21", "ogbg-molesol", "ZINC"]
+datasets1 = ["ZINC", "Rxn_cgr"]
 
-scoring = {"ogbg-molbace": "roc-auc", "ogbg-molclintox": "roc-auc", "ogbg-molbbbp": "roc-auc",
-"ogbg-molsider": "roc-auc", "ogbg-moltoxcast": "roc-auc", "ogbg-mollipo": "rmse",
-"ogbg-molhiv": "roc-auc", "ogbg-moltox21": "roc-auc", "ogbg-molesol": "rmse", "ZINC": "mae"}
+scoring = {"ZINC": "mae", "Rxn_cgr": "mae"}
 
 gt_to_mp = {"CRE": "CIN", "DSS": "DSS", " DS": "DS"}
 
-for i, datasets in enumerate([datasets1, datasets2]):
+for i, datasets in enumerate([datasets1]):
     df_avg = pd.DataFrame(columns=datasets, index=models)
     df_std = pd.DataFrame(columns=datasets, index=models)
 
@@ -31,9 +28,6 @@ for i, datasets in enumerate([datasets1, datasets2]):
             model = "_".join(file_name.split("_")[1:])
 
             results_path = os.path.join(experiment, "final.json")
-
-            if f"ogbg-{dataset.lower()}" in datasets:
-                dataset = f"ogbg-{dataset.lower()}"
 
             if dataset == "CSL":
                 continue
@@ -47,13 +41,8 @@ for i, datasets in enumerate([datasets1, datasets2]):
             with open(results_path) as file:
                 results = yaml.safe_load(file)
 
-                if scoring[dataset] == "roc-auc":
-                    df_avg[dataset][model] = round(results["result_test-avg"]*100, 1)
-                    df_std[dataset][model] = math.ceil(results["result_test-std"]*1000) / 10
-
-                else:
-                    df_avg[dataset][model] = round(results["result_test-avg"], 3)
-                    df_std[dataset][model] = math.ceil(results["result_test-std"]*1000) /1000
+                df_avg[dataset][model] = round(results["result_test-avg"], 3)
+                df_std[dataset][model] = math.ceil(results["result_test-std"]*1000) /1000
 
 
     renaming_index = {"gin": "GIN", "cre":"GIN + CRE", "dss": "DSS", "sbe_dss": "GIN + DSS", "ds": "DS", "sbe_ds": "GIN + DS",

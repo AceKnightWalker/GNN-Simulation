@@ -1,18 +1,5 @@
-
-declare -a arr=("ogbg-molbace" "ogbg-molclintox" "ogbg-moltoxcast" "ogbg-mollipo" "ogbg-molbbbp" "ogbg-molsider" "ogbg-moltox21" "ogbg-molesol" "ogbg-molhiv" )
 declare -a configs=("gcn_cre.yaml" "gcn_sbe_ds.yaml" "gcn_sbe_dss.yaml" "gcn.yaml")
 
-
-
-# ogb
-for ds in "${arr[@]}"
-do
-    for config in "${configs[@]}"
-    do
-        echo "$ds"
-        python Exp/run_experiment.py -grid "Configs/GCN/ogb/${config}" -dataset "$ds" --candidates 40  --repeats 10 --mode single
-        done
-   done
 
 
 # ZINC
